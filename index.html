@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Everything a child learns · Curriculum Map</title>
+<style>
+  :root{
+    --bg:#05070d;
+    --panel:rgba(10,14,24,0.82);
+    --line:rgba(255,255,255,0.08);
+    --ink:#eef2fb;
+    --muted:#8b93a7;
+    --faint:#5a6376;
+    --accent:#f4b702;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{position:fixed;inset:0}
+  canvas{display:block;touch-action:none}
+
+  /* ---- Loading ---- */
+  #loader{
+    position:fixed;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;
+    background:var(--bg);z-index:50;transition:opacity .6s ease;
+  }
+  #loader.hide{opacity:0;pointer-events:none}
+  .spinner{width:34px;height:34px;border:2px solid rgba(255,255,255,.15);
+    border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #loader .lt{font-size:13px;color:var(--muted);letter-spacing:.02em}
+
+  /* ---- Header ---- */
+  header{
+    position:fixed;top:0;left:0;right:0;z-index:20;
+    padding:22px 26px;pointer-events:none;
+    display:flex;justify-content:space-between;align-items:flex-start;gap:20px;
+  }
+  header .title{pointer-events:auto;max-width:520px}
+  header h1{
+    font-family:Georgia,"Times New Roman",serif;
+    font-weight:600;font-size:clamp(20px,2.4vw,30px);
+    line-height:1.05;letter-spacing:-.01em;
+  }
+  header .sub{
+    margin-top:8px;font-size:13.5px;line-height:1.5;color:var(--muted);max-width:440px;
+  }
+  header .sub b{color:var(--ink);font-weight:600}
+  header .gh{
+    pointer-events:auto;display:inline-flex;align-items:center;gap:7px;
+    margin-top:12px;padding:7px 13px;border:1px solid var(--line);border-radius:8px;
+    color:var(--ink);text-decoration:none;font-size:12.5px;
+    background:rgba(255,255,255,.03);transition:background .2s,border-color .2s;
+  }
+  header .gh:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.2)}
+  header .gh svg{width:15px;height:15px;fill:currentColor}
+  header .lic{margin-top:7px;font-size:11px;color:var(--faint)}
+
+  /* ---- Legend / subject toggles ---- */
+  #legend{
+    position:fixed;left:26px;bottom:22px;z-index:20;
+    background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:12px;
+    padding:12px 13px;max-width:230px;
+  }
+  #legend .lh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--faint);margin-bottom:9px}
+  .subj{
+    display:flex;align-items:center;gap:9px;padding:4px 5px;border-radius:7px;
+    cursor:pointer;user-select:none;transition:background .15s;font-size:12.5px;
+  }
+  .subj:hover{background:rgba(255,255,255,.05)}
+  .subj.off{opacity:.32}
+  .subj .dot{width:11px;height:11px;border-radius:50%;flex:none;
+    box-shadow:0 0 8px var(--c)}
+  .subj .nm{flex:1;color:var(--ink)}
+  .subj .ct{color:var(--faint);font-size:11px;font-variant-numeric:tabular-nums}
+
+  /* ---- Hint ---- */
+  #hint{
+    position:fixed;right:26px;bottom:22px;z-index:20;
+    font-size:11.5px;color:var(--faint);text-align:right;line-height:1.7;
+    pointer-events:none;
+  }
+  #hint b{color:var(--muted);font-weight:500}
+
+  /* ---- Detail panel ---- */
+  #detail{
+    position:fixed;top:0;right:0;bottom:0;width:min(390px,90vw);z-index:30;
+    background:var(--panel);backdrop-filter:blur(16px);
+    border-left:1px solid var(--line);
+    transform:translateX(100%);transition:transform .34s cubic-bezier(.4,0,.2,1);
+    display:flex;flex-direction:column;
+  }
+  #detail.open{transform:translateX(0)}
+  #detail .dhead{padding:22px 24px 16px;border-bottom:1px solid var(--line)}
+  #detail .close{
+    position:absolute;top:16px;right:18px;width:30px;height:30px;border:none;
+    background:rgba(255,255,255,.05);border-radius:7px;color:var(--muted);
+    cursor:pointer;font-size:17px;line-height:1;transition:background .15s}
+  #detail .close:hover{background:rgba(255,255,255,.12);color:var(--ink)}
+  #detail .dtag{display:inline-flex;align-items:center;gap:7px;font-size:11px;
+    text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px}
+  #detail .dtag .dot{width:9px;height:9px;border-radius:50%}
+  #detail h2{font-family:Georgia,serif;font-weight:600;font-size:20px;line-height:1.2;
+    padding-right:34px}
+  #detail .dmeta{margin-top:9px;font-size:12px;color:var(--faint);display:flex;
+    gap:14px;flex-wrap:wrap}
+  #detail .dmeta span b{color:var(--muted);font-weight:500}
+  #detail .dbody{padding:18px 24px;overflow-y:auto;flex:1}
+  #detail .desc{font-size:13.5px;line-height:1.6;color:#c4cbdb;margin-bottom:22px}
+  #detail .sec{margin-bottom:22px}
+  #detail .sec h3{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--faint);margin-bottom:11px;display:flex;align-items:center;gap:8px}
+  #detail .sec h3 .n{background:rgba(244,183,2,.14);color:var(--accent);
+    border-radius:20px;padding:1px 8px;font-size:11px;letter-spacing:0}
+  .prq{
+    display:block;width:100%;text-align:left;border:1px solid var(--line);
+    background:rgba(255,255,255,.02);border-radius:9px;padding:10px 12px;
+    margin-bottom:7px;cursor:pointer;transition:background .15s,border-color .15s}
+  .prq:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18)}
+  .prq .pn{font-size:13px;color:var(--ink);font-weight:500;margin-bottom:3px;
+    display:flex;align-items:center;gap:7px}
+  .prq .pn .d{width:8px;height:8px;border-radius:50%;flex:none}
+  .prq .pr{font-size:11.5px;color:var(--muted);line-height:1.45}
+  .prq .strength{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;
+    padding:1px 6px;border-radius:10px;margin-left:auto;flex:none}
+  .prq .strength.hard{background:rgba(244,183,2,.14);color:var(--accent)}
+  .prq .strength.soft{background:rgba(255,255,255,.07);color:var(--faint)}
+  .ev{font-size:12.5px;line-height:1.5;color:#c4cbdb;padding-left:16px;
+    position:relative;margin-bottom:8px}
+  .ev::before{content:"";position:absolute;left:2px;top:7px;width:5px;height:5px;
+    border-radius:50%;background:var(--accent)}
+  .empty{font-size:12.5px;color:var(--faint);font-style:italic}
+
+  @media (max-width:640px){
+    header{padding:16px 18px}
+    header .sub{display:none}
+    #legend{left:14px;bottom:14px;padding:10px;max-width:180px}
+    #legend .subj .ct{display:none}
+    #hint{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="loader">
+  <div class="spinner"></div>
+  <div class="lt">Assembling 1,590 concepts…</div>
+</div>
+
+<header>
+  <div class="title">
+    <h1>Everything a child learns.</h1>
+    <p class="sub">The open map of primary school. <b id="cCount">1,590</b> concepts and
+      <b id="dCount">3,221</b> prerequisite links, from first words to algebra.
+      Tap any dot to see everything a learner must master before it.</p>
+    <a class="gh" href="https://github.com/withmarbleapp/os-taxonomy" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      View on GitHub
+    </a>
+    <div class="lic">Open data · ODbL 1.0 · Data © Marble</div>
+  </div>
+</header>
+
+<div id="legend">
+  <div class="lh">Subjects · click to toggle</div>
+  <div id="subjects"></div>
+</div>
+
+<div id="hint"><b>Drag</b> to spin · <b>Scroll</b> to zoom · <b>Tap</b> a dot</div>
+
+<div id="detail">
+  <button class="close" id="dClose">×</button>
+  <div class="dhead">
+    <div class="dtag"><span class="dot" id="dDot"></span><span id="dSubject"></span></div>
+    <h2 id="dName"></h2>
+    <div class="dmeta">
+      <span><b>Ages</b> <span id="dAge"></span></span>
+      <span><b>Domain</b> <span id="dDomain"></span></span>
+      <span><b>Type</b> <span id="dType"></span></span>
+    </div>
+  </div>
+  <div class="dbody">
+    <p class="desc" id="dDesc"></p>
+    <div class="sec">
+      <h3>Builds directly on <span class="n" id="dPrqN">0</span></h3>
+      <div id="dPrereqs"></div>
+    </div>
+    <div class="sec">
+      <h3>Unlocks next <span class="n" id="dUnlN">0</span></h3>
+      <div id="dUnlocks"></div>
+    </div>
+    <div class="sec">
+      <h3>Mastery evidence</h3>
+      <div id="dEvidence"></div>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script>
+const SUBJECTS = {
+  "Science":                       "#4fc3f7",
+  "Mathematics":                   "#f4b702",
+  "English":                       "#ff6b8a",
+  "History":                       "#c792ea",
+  "Personal & Social Development":  "#66d9a6",
+  "Life Skills":                   "#ffab5e",
+  "Computing":                     "#7ce3ff",
+  "Learning to Learn":             "#e0a3ff"
+};
+
+let scene, camera, renderer, points, lineSeg;
+let raycaster, mouse = new THREE.Vector2();
+let topics = [], deps = [], byId = {}, prereqMap = {}, unlockMap = {};
+let positions = [], colors = [], sizes = [];
+let hiddenSubjects = new Set();
+let selectedIdx = -1, hoverIdx = -1;
+let autoRotate = true, rotVel = 0.0006;
+
+// interaction state
+let isDragging = false, lastX = 0, lastY = 0;
+let rotX = 0.25, rotY = 0, targetRotX = 0.25, targetRotY = 0;
+let camDist = 320, targetCamDist = 320;
+let group;
+
+const R = 150;             // sphere radius
+const AGE_MIN = 4, AGE_MAX = 13;
+
+init();
+
+async function init(){
+  const res = await fetch('data/graph.json');
+  const data = await res.json();
+  topics = data.topics;
+  deps = data.deps;
+
+  topics.forEach((t,i)=>{ t._i = i; byId[t.id] = t; });
+  deps.forEach(e=>{
+    (prereqMap[e.t] = prereqMap[e.t] || []).push(e);
+    (unlockMap[e.p] = unlockMap[e.p] || []).push(e);
+  });
+
+  document.getElementById('cCount').textContent = data.meta.topicCount.toLocaleString();
+  document.getElementById('dCount').textContent = data.meta.depCount.toLocaleString();
+
+  buildScene();
+  buildLegend();
+  layoutNodes();
+  buildPoints();
+  buildLines();
+  bindEvents();
+  animate();
+
+  setTimeout(()=>document.getElementById('loader').classList.add('hide'), 300);
+}
+
+function buildScene(){
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x05070d, 0.0016);
+
+  camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 3000);
+  camera.position.z = camDist;
+
+  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  document.getElementById('app').appendChild(renderer.domElement);
+
+  group = new THREE.Group();
+  scene.add(group);
+
+  raycaster = new THREE.Raycaster();
+  raycaster.params.Points.threshold = 3.2;
+}
+
+// Fibonacci-sphere placement, banded by age (height = age, like the original)
+function layoutNodes(){
+  const N = topics.length;
+  const gr = Math.PI * (3 - Math.sqrt(5));
+  // sort so age maps to latitude (y). Younger = bottom, older = top.
+  const order = topics.map(t=>t._i).sort((a,b)=>{
+    const aa = (topics[a].a0+topics[a].a1)/2, bb=(topics[b].a0+topics[b].a1)/2;
+    return aa-bb;
+  });
+  order.forEach((idx, k)=>{
+    const t = topics[idx];
+    const y = 1 - (k/(N-1))*2;              // 1 .. -1
+    const rad = Math.sqrt(Math.max(0,1-y*y));
+    const theta = gr*k;
+    // add slight radial jitter by centrality so hubs sit a touch inward
+    const rr = R * (0.94 + 0.06*(1-t.c));
+    const x = Math.cos(theta)*rad*rr;
+    const z = Math.sin(theta)*rad*rr;
+    t._pos = new THREE.Vector3(x, y*rr, z);
+  });
+}
+
+function hexToRgb(h){
+  const n = parseInt(h.slice(1),16);
+  return [(n>>16&255)/255,(n>>8&255)/255,(n&255)/255];
+}
+
+function buildPoints(){
+  const N = topics.length;
+  positions = new Float32Array(N*3);
+  colors = new Float32Array(N*3);
+  sizes = new Float32Array(N);
+
+  topics.forEach((t,i)=>{
+    positions[i*3]=t._pos.x; positions[i*3+1]=t._pos.y; positions[i*3+2]=t._pos.z;
+    const c = hexToRgb(SUBJECTS[t.s]||"#888888");
+    colors[i*3]=c[0]; colors[i*3+1]=c[1]; colors[i*3+2]=c[2];
+    sizes[i] = 3.4 + t.c*11;        // centrality -> size
+  });
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes,1));
+  geo.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(N).fill(1),1));
+
+  const sprite = makeDotTexture();
+  const mat = new THREE.ShaderMaterial({
+    uniforms:{ tex:{value:sprite}, scale:{value: innerHeight/2} },
+    vertexShader:`
+      attribute float size; attribute float alpha; attribute vec3 color;
+      varying vec3 vColor; varying float vAlpha;
+      uniform float scale;
+      void main(){
+        vColor=color; vAlpha=alpha;
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        gl_PointSize = size * (scale / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      uniform sampler2D tex; varying vec3 vColor; varying float vAlpha;
+      void main(){
+        vec4 t = texture2D(tex, gl_PointCoord);
+        if(t.a < 0.05) discard;
+        gl_FragColor = vec4(vColor, t.a*vAlpha);
+      }`,
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
+  });
+
+  points = new THREE.Points(geo, mat);
+  group.add(points);
+}
+
+function makeDotTexture(){
+  const s=64, c=document.createElement('canvas'); c.width=c.height=s;
+  const g=c.getContext('2d');
+  const grad=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+  grad.addColorStop(0,'rgba(255,255,255,1)');
+  grad.addColorStop(0.25,'rgba(255,255,255,0.95)');
+  grad.addColorStop(0.55,'rgba(255,255,255,0.35)');
+  grad.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=grad; g.beginPath(); g.arc(s/2,s/2,s/2,0,7); g.fill();
+  const tex=new THREE.Texture(c); tex.needsUpdate=true; return tex;
+}
+
+function buildLines(){
+  const segs=[], cols=[];
+  deps.forEach(e=>{
+    const a=byId[e.t], b=byId[e.p];
+    if(!a||!b) return;
+    segs.push(a._pos.x,a._pos.y,a._pos.z, b._pos.x,b._pos.y,b._pos.z);
+    const ca=hexToRgb(SUBJECTS[a.s]||'#888'), cb=hexToRgb(SUBJECTS[b.s]||'#888');
+    const al = 0.14;
+    cols.push(ca[0]*al,ca[1]*al,ca[2]*al, cb[0]*al,cb[1]*al,cb[2]*al);
+  });
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(segs,3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
+  const mat=new THREE.LineBasicMaterial({vertexColors:true, transparent:true,
+    opacity:1, blending:THREE.AdditiveBlending, depthWrite:false});
+  lineSeg=new THREE.LineSegments(geo, mat);
+  group.add(lineSeg);
+}
+
+function buildLegend(){
+  const box=document.getElementById('subjects');
+  const counts={};
+  topics.forEach(t=>counts[t.s]=(counts[t.s]||0)+1);
+  Object.keys(SUBJECTS).forEach(s=>{
+    const el=document.createElement('div');
+    el.className='subj'; el.dataset.s=s;
+    el.innerHTML=`<span class="dot" style="--c:${SUBJECTS[s]};background:${SUBJECTS[s]}"></span>
+      <span class="nm">${s}</span><span class="ct">${counts[s]||0}</span>`;
+    el.onclick=()=>toggleSubject(s, el);
+    box.appendChild(el);
+  });
+}
+
+function toggleSubject(s, el){
+  if(hiddenSubjects.has(s)){ hiddenSubjects.delete(s); el.classList.remove('off'); }
+  else { hiddenSubjects.add(s); el.classList.add('off'); }
+  applyVisibility();
+}
+
+function applyVisibility(){
+  const alpha = points.geometry.getAttribute('alpha');
+  topics.forEach((t,i)=>{ alpha.array[i] = hiddenSubjects.has(t.s) ? 0.0 : 1.0; });
+  alpha.needsUpdate = true;
+
+  // rebuild line colors dimming hidden
+  const col = lineSeg.geometry.getAttribute('color');
+  let p=0;
+  deps.forEach(e=>{
+    const a=byId[e.t], b=byId[e.p]; if(!a||!b){return;}
+    const hide = hiddenSubjects.has(a.s)||hiddenSubjects.has(b.s);
+    const al = hide?0.0:0.14;
+    const ca=hexToRgb(SUBJECTS[a.s]||'#888'), cb=hexToRgb(SUBJECTS[b.s]||'#888');
+    col.array[p++]=ca[0]*al; col.array[p++]=ca[1]*al; col.array[p++]=ca[2]*al;
+    col.array[p++]=cb[0]*al; col.array[p++]=cb[1]*al; col.array[p++]=cb[2]*al;
+  });
+  col.needsUpdate = true;
+}
+
+function bindEvents(){
+  const el = renderer.domElement;
+  el.addEventListener('pointerdown', e=>{
+    isDragging=true; autoRotate=false; lastX=e.clientX; lastY=e.clientY;
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', e=>{
+    if(isDragging){
+      const dx=e.clientX-lastX, dy=e.clientY-lastY;
+      targetRotY += dx*0.005; targetRotX += dy*0.005;
+      targetRotX = Math.max(-1.4, Math.min(1.4, targetRotX));
+      lastX=e.clientX; lastY=e.clientY;
+    } else {
+      updateHover(e);
+    }
+  });
+  el.addEventListener('pointerup', e=>{
+    isDragging=false;
+    const moved = Math.abs(e.clientX-lastX)+Math.abs(e.clientY-lastY);
+    if(moved<4) pickAt(e);
+  });
+  el.addEventListener('wheel', e=>{
+    e.preventDefault();
+    targetCamDist *= (1 + Math.sign(e.deltaY)*0.08);
+    targetCamDist = Math.max(120, Math.min(620, targetCamDist));
+  }, {passive:false});
+
+  window.addEventListener('resize', onResize);
+  document.getElementById('dClose').onclick = closeDetail;
+  // pinch zoom
+  let pd=0;
+  el.addEventListener('touchmove', e=>{
+    if(e.touches.length===2){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,
+                          e.touches[0].clientY-e.touches[1].clientY);
+      if(pd) { targetCamDist *= pd/d; targetCamDist=Math.max(120,Math.min(620,targetCamDist)); }
+      pd=d;
+    }
+  },{passive:true});
+  el.addEventListener('touchend', ()=>pd=0);
+}
+
+function screenRay(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  mouse.x=((e.clientX-r.left)/r.width)*2-1;
+  mouse.y=-((e.clientY-r.top)/r.height)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+}
+
+function pickAt(e){
+  screenRay(e);
+  const hits = raycaster.intersectObject(points);
+  const hit = hits.find(h=>{
+    const t=topics[h.index];
+    return !hiddenSubjects.has(t.s);
+  });
+  if(hit){ selectNode(hit.index); }
+  else { closeDetail(); }
+}
+
+function updateHover(e){
+  screenRay(e);
+  const hits = raycaster.intersectObject(points);
+  const hit = hits.find(h=>!hiddenSubjects.has(topics[h.index].s));
+  const idx = hit? hit.index : -1;
+  renderer.domElement.style.cursor = idx>=0 ? 'pointer' : 'grab';
+}
+
+function selectNode(idx){
+  selectedIdx = idx;
+  autoRotate = false;
+  const t = topics[idx];
+  const col = SUBJECTS[t.s]||'#888';
+
+  document.getElementById('dDot').style.background = col;
+  document.getElementById('dSubject').textContent = t.s;
+  document.getElementById('dName').textContent = t.n;
+  document.getElementById('dAge').textContent = `${t.a0}–${t.a1}`;
+  document.getElementById('dDomain').textContent = t.d || '—';
+  document.getElementById('dType').textContent = t.ty.charAt(0)+t.ty.slice(1).toLowerCase();
+  document.getElementById('dDesc').textContent = t.desc;
+
+  // prerequisites
+  const prq = (prereqMap[t.id]||[]);
+  document.getElementById('dPrqN').textContent = prq.length;
+  const pBox = document.getElementById('dPrereqs'); pBox.innerHTML='';
+  if(!prq.length) pBox.innerHTML='<div class="empty">Nothing — this is a starting point.</div>';
+  prq.forEach(e=>{
+    const p = byId[e.p]; if(!p) return;
+    pBox.appendChild(prqCard(p, e.reason, e.s));
+  });
+
+  // unlocks
+  const unl = (unlockMap[t.id]||[]);
+  document.getElementById('dUnlN').textContent = unl.length;
+  const uBox = document.getElementById('dUnlocks'); uBox.innerHTML='';
+  if(!unl.length) uBox.innerHTML='<div class="empty">Nothing yet — a leaf of the tree.</div>';
+  unl.slice(0,12).forEach(e=>{
+    const c = byId[e.t]; if(!c) return;
+    uBox.appendChild(prqCard(c, e.reason, e.s));
+  });
+  if(unl.length>12){
+    const more=document.createElement('div'); more.className='empty';
+    more.textContent=`+${unl.length-12} more`; uBox.appendChild(more);
+  }
+
+  // evidence
+  const eBox = document.getElementById('dEvidence'); eBox.innerHTML='';
+  const ev = t.ev||[];
+  if(!ev.length) eBox.innerHTML='<div class="empty">—</div>';
+  ev.forEach(x=>{ const d=document.createElement('div'); d.className='ev'; d.textContent=x; eBox.appendChild(d); });
+
+  document.getElementById('detail').classList.add('open');
+  focusCamOn(t);
+}
+
+function prqCard(node, reason, strength){
+  const col = SUBJECTS[node.s]||'#888';
+  const el=document.createElement('button');
+  el.className='prq';
+  el.innerHTML=`<div class="pn"><span class="d" style="background:${col}"></span>${node.n}
+    <span class="strength ${strength}">${strength}</span></div>
+    ${reason?`<div class="pr">${reason}</div>`:''}`;
+  el.onclick=()=>selectNode(node._i);
+  return el;
+}
+
+function focusCamOn(t){
+  // rotate group so the selected node faces camera-ish (gentle)
+  const p=t._pos.clone().normalize();
+  targetRotY = Math.atan2(p.x, p.z);
+  targetRotX = Math.max(-1.2, Math.min(1.2, -Math.asin(p.y)*0.6));
+}
+
+function closeDetail(){
+  document.getElementById('detail').classList.remove('open');
+  selectedIdx=-1;
+}
+
+function onResize(){
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  if(points) points.material.uniforms.scale.value = innerHeight/2;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRotate) targetRotY += rotVel;
+  rotX += (targetRotX-rotX)*0.08;
+  rotY += (targetRotY-rotY)*0.08;
+  camDist += (targetCamDist-camDist)*0.08;
+  group.rotation.x = rotX;
+  group.rotation.y = rotY;
+  camera.position.z = camDist;
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
