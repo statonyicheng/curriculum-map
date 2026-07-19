@@ -208,7 +208,18 @@
 
 <script src="vendor/three.min.js"></script>
 <script>
-let scene, camera, renderer, points, lineSeg, group;
+let scene, camera, renderer, points, glowPoints, lineSeg, group;
+
+function makeGlow(){
+  const s=128,c=document.createElement('canvas');c.width=c.height=s;
+  const g=c.getContext('2d');
+  const gr=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+  gr.addColorStop(0,'rgba(255,255,255,0.9)');
+  gr.addColorStop(0.4,'rgba(255,255,255,0.3)');
+  gr.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=gr;g.beginPath();g.arc(s/2,s/2,s/2,0,7);g.fill();
+  const t=new THREE.Texture(c);t.needsUpdate=true;return t;
+}
 let raycaster, mouse = new THREE.Vector2();
 let nodes = [], edges = [], byId = {}, catMeta = {}, fwMeta = {}, fwById = {};
 let prereqMap = {}, unlockMap = {}, adjMap = {};
@@ -218,8 +229,14 @@ let autoRotate = true;
 
 let isDragging = false, lastX = 0, lastY = 0;
 let rotY = 0, targetRotY = 0, rotX = 0.02, targetRotX = 0.02;
-let camDist = 560, targetCamDist = 560;
+let camDist = 300, targetCamDist = 300;
 let camY = 0, targetCamY = 0;
+
+// entrance reveal
+let revealStart = 0;
+let revealDone = false;
+const REVEAL_MS = 3200;   // total time for all nodes to appear
+const REVEAL_FADE = 0.14; // width of the per-node fade window
 
 init();
 
@@ -247,6 +264,7 @@ async function init(){
   buildPoints();
   buildLines();
   bindEvents();
+  revealStart = performance.now();
   animate();
   setTimeout(()=>document.getElementById('loader').classList.add('hide'), 350);
 }
@@ -256,7 +274,6 @@ function hexRgb(h){const n=parseInt(h.slice(1),16);return[(n>>16&255)/255,(n>>8&
 
 function buildScene(){
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x000e2f, 0.0011);
   camera = new THREE.PerspectiveCamera(52, innerWidth/innerHeight, 0.1, 3000);
   camera.position.set(0, 0, camDist);
   renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
@@ -270,24 +287,44 @@ function buildScene(){
 }
 
 function makeDot(){
-  const s=64,c=document.createElement('canvas');c.width=c.height=s;
-  const g=c.getContext('2d');const gr=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
-  gr.addColorStop(0,'rgba(255,255,255,1)');gr.addColorStop(0.3,'rgba(255,255,255,0.9)');
-  gr.addColorStop(0.6,'rgba(255,255,255,0.28)');gr.addColorStop(1,'rgba(255,255,255,0)');
-  g.fillStyle=gr;g.beginPath();g.arc(s/2,s/2,s/2,0,7);g.fill();
+  // hard-edged OPAQUE bubble (Marble style): solid fill, crisp rim,
+  // tiny soft edge only for anti-aliasing so it doesn't blend to navy.
+  const s=128,c=document.createElement('canvas');c.width=c.height=s;
+  const g=c.getContext('2d');
+  g.clearRect(0,0,s,s);
+  // solid opaque disc
+  g.fillStyle='rgba(255,255,255,1)';
+  g.beginPath();g.arc(s/2,s/2,s*0.46,0,7);g.fill();
+  // soft 1px anti-alias ring
+  const grad=g.createRadialGradient(s/2,s/2,s*0.44,s/2,s/2,s*0.5);
+  grad.addColorStop(0,'rgba(255,255,255,1)');
+  grad.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=grad;g.beginPath();g.arc(s/2,s/2,s*0.5,0,7);g.fill();
+  // subtle top-left highlight for dimensionality
+  const hi=g.createRadialGradient(s*0.38,s*0.36,0,s*0.38,s*0.36,s*0.32);
+  hi.addColorStop(0,'rgba(255,255,255,0.55)');
+  hi.addColorStop(1,'rgba(255,255,255,0)');
+  g.globalCompositeOperation='lighter';
+  g.fillStyle=hi;g.beginPath();g.arc(s*0.38,s*0.36,s*0.32,0,7);g.fill();
   const t=new THREE.Texture(c);t.needsUpdate=true;return t;
 }
 
 function buildPoints(){
   const N=nodes.length;
   const pos=new Float32Array(N*3), col=new Float32Array(N*3),
-        siz=new Float32Array(N), alp=new Float32Array(N).fill(1);
+        siz=new Float32Array(N), alp=new Float32Array(N).fill(0), // start hidden for reveal
+        reveal=new Float32Array(N); // per-node reveal delay ordering
+  // reveal order: bottom (tail) first, sweeping up — feels like it grows
+  const order=nodes.map((n,i)=>i).sort((a,b)=>nodes[a].y-nodes[b].y);
+  order.forEach((idx,rank)=>{ reveal[idx]=rank/N; });
   nodes.forEach((n,i)=>{
     pos[i*3]=n.x; pos[i*3+1]=n.y; pos[i*3+2]=n.z;
-    const c=hexRgb(catColor(n.c)); col[i*3]=c[0];col[i*3+1]=c[1];col[i*3+2]=c[2];
-    // hubs (layer0) big, elements medium, details small; boost by centrality
-    const base=[7.5,5.0,3.2,2.4][n.l];
-    siz[i]=base + n.cen*10;
+    const c=hexRgb(catColor(n.c));
+    col[i*3]=c[0];col[i*3+1]=c[1];col[i*3+2]=c[2];
+    // varied bubble sizes like Marble; hubs largest, details small
+    const base=[22,15,10,7][n.l];
+    siz[i]=base + n.cen*20;
+    n._reveal=reveal[i];
   });
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
@@ -303,12 +340,38 @@ function buildPoints(){
         vec4 mv=modelViewMatrix*vec4(position,1.0);
         gl_PointSize=size*(scale/-mv.z);gl_Position=projectionMatrix*mv;}`,
     fragmentShader:`uniform sampler2D tex;varying vec3 vColor;varying float vAlpha;
-      void main(){vec4 t=texture2D(tex,gl_PointCoord);if(t.a<0.05)discard;
+      void main(){vec4 t=texture2D(tex,gl_PointCoord);if(t.a<0.08)discard;
         gl_FragColor=vec4(vColor,t.a*vAlpha);}`,
-    transparent:true,depthWrite:false,blending:THREE.AdditiveBlending
+    transparent:true,depthWrite:false,depthTest:false,
+    blending:THREE.NormalBlending   // solid bubbles, not glowing haze
   });
   points=new THREE.Points(geo,mat);
   group.add(points);
+
+  // ---- soft glow layer underneath (additive) for luminous mass ----
+  const glowGeo=new THREE.BufferGeometry();
+  glowGeo.setAttribute('position',new THREE.BufferAttribute(pos.slice(),3));
+  glowGeo.setAttribute('color',new THREE.BufferAttribute(col.slice(),3));
+  const glowSiz=new Float32Array(N);
+  for(let i=0;i<N;i++) glowSiz[i]=siz[i]*2.2;
+  glowGeo.setAttribute('size',new THREE.BufferAttribute(glowSiz,1));
+  glowGeo.setAttribute('alpha',new THREE.BufferAttribute(alp,1)); // shares reveal alpha
+  const glowMat=new THREE.ShaderMaterial({
+    uniforms:{tex:{value:makeGlow()},scale:{value:innerHeight/2}},
+    vertexShader:`attribute float size;attribute float alpha;attribute vec3 color;
+      varying vec3 vColor;varying float vAlpha;uniform float scale;
+      void main(){vColor=color;vAlpha=alpha;
+        vec4 mv=modelViewMatrix*vec4(position,1.0);
+        gl_PointSize=size*(scale/-mv.z);gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`uniform sampler2D tex;varying vec3 vColor;varying float vAlpha;
+      void main(){vec4 t=texture2D(tex,gl_PointCoord);
+        gl_FragColor=vec4(vColor,t.a*vAlpha*0.35);}`,
+    transparent:true,depthWrite:false,depthTest:false,
+    blending:THREE.AdditiveBlending
+  });
+  glowPoints=new THREE.Points(glowGeo,glowMat);
+  glowPoints.renderOrder=-1; // draw behind solid bubbles
+  group.add(glowPoints);
 }
 
 function buildLines(){
@@ -316,16 +379,18 @@ function buildLines(){
   edges.forEach(e=>{
     const a=byId[e.t],b=byId[e.p];if(!a||!b)return;
     seg.push(a.x,a.y,a.z,b.x,b.y,b.z);
-    const ca=hexRgb(catColor(a.c)),cb=hexRgb(catColor(b.c));
-    const al=e.s==='hard'?0.11:0.055;
-    col.push(ca[0]*al,ca[1]*al,ca[2]*al,cb[0]*al,cb[1]*al,cb[2]*al);
+    // faint cool-grey threads (Marble style) — subtle, node-subordinate
+    const al=e.s==='hard'?0.16:0.08;
+    const g=[0.62,0.68,0.82]; // soft blue-grey
+    col.push(g[0]*al,g[1]*al,g[2]*al,g[0]*al,g[1]*al,g[2]*al);
   });
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute(seg,3));
   geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   geo.setAttribute('baseColor',new THREE.Float32BufferAttribute(col.slice(),3));
   const mat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,
-    opacity:1,blending:THREE.AdditiveBlending,depthWrite:false});
+    opacity:0,   // start hidden, fade in after nodes
+    blending:THREE.NormalBlending,depthWrite:false});
   lineSeg=new THREE.LineSegments(geo,mat);
   group.add(lineSeg);
 }
@@ -415,6 +480,9 @@ function bindEvents(){
     isDragging=false;
     const moved=Math.abs(e.clientX-lastX)+Math.abs(e.clientY-lastY);
     if(moved<4)pickAt(e);
+    // resume gentle self-rotation after a short pause (unless a node is open)
+    clearTimeout(window._rotTimer);
+    window._rotTimer=setTimeout(()=>{ if(!selectedId) autoRotate=true; }, 2500);
   });
   el.addEventListener('wheel',e=>{e.preventDefault();
     targetCamDist*=(1+Math.sign(e.deltaY)*0.08);
@@ -522,6 +590,7 @@ function closeDetail(){
   document.getElementById('detail').classList.remove('open');
   selectedId=null;clearHighlight();
   targetCamY=0;targetCamDist=560;
+  autoRotate=true;
 }
 
 function onResize(){
@@ -532,7 +601,31 @@ function onResize(){
 
 function animate(){
   requestAnimationFrame(animate);
-  if(autoRotate)targetRotY+=0.0009;
+
+  // ---- entrance reveal: nodes fade+grow in, bottom-to-top, then lines ----
+  if(!revealDone){
+    const t=(performance.now()-revealStart)/REVEAL_MS; // 0..1
+    const alpha=points.geometry.getAttribute('alpha');
+    for(let i=0;i<nodes.length;i++){
+      const d=nodes[i]._reveal;              // 0..1 order
+      // node becomes visible as the sweep passes its position
+      let a=(t - d)/REVEAL_FADE;
+      a=a<0?0:(a>1?1:a);
+      // respect category hiding even during reveal
+      alpha.array[i]=hiddenCats.has(nodes[i].c)?0:a;
+    }
+    alpha.needsUpdate=true;
+    // lines fade in over the last 40% of the reveal
+    lineSeg.material.opacity = Math.max(0, Math.min(1, (t-0.6)/0.4));
+    if(t>=1+REVEAL_FADE){
+      revealDone=true;
+      lineSeg.material.opacity=1;
+      if(!selectedId) clearHighlight();
+    }
+  }
+
+  // ---- continuous self-rotation (never stops unless dragging) ----
+  if(autoRotate) targetRotY += 0.0011;
   rotY+=(targetRotY-rotY)*0.07;
   rotX+=(targetRotX-rotX)*0.07;
   camDist+=(targetCamDist-camDist)*0.07;
